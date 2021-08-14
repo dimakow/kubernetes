@@ -249,6 +249,20 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 				ready = !exists // no readinessProbe -> always ready
 				if exists {
 					// Trigger an immediate run of the readinessProbe to update ready state
+					klog.Infof("PodUID: %+v no worker has run yet",podUID)
+					
+					podStatus, found := m.statusManager.GetPodStatus(podUID)
+					if found {
+						for _,containerStatus := range podStatus.ContainerStatuses {
+							if c.ContainerID == containerStatus.ContainerID {
+								klog.Infof("Returning ready status for container %+v ready %+v",containerStatus.Name,containerStatus.Ready)
+								ready = containerStatus.Ready
+							}
+						}
+					} else {
+						klog.Infof("Pod %+v not found in status manager",podUID)
+					}
+
 					select {
 					case w.manualTriggerCh <- struct{}{}:
 					default: // Non-blocking.

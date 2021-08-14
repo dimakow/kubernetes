@@ -22,6 +22,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+
+	"k8s.io/klog/v2"
 )
 
 // Manager provides a probe results cache and channel of updates.
@@ -111,6 +113,7 @@ func (m *manager) Get(id kubecontainer.ContainerID) (Result, bool) {
 }
 
 func (m *manager) Set(id kubecontainer.ContainerID, result Result, pod *v1.Pod) {
+	klog.Infof("Resultsmanager: containerId: %+v result: %+v",id,result)
 	if m.setInternal(id, result) {
 		m.updates <- Update{id, result, pod.UID}
 	}

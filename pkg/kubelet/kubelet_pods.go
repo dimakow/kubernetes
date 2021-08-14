@@ -1521,6 +1521,8 @@ func (kl *Kubelet) generateAPIPodStatus(pod *v1.Pod, podStatus *kubecontainer.Po
 
 	s := kl.convertStatusToAPIStatus(pod, podStatus)
 
+	klog.Infof("Pod %+v PodStatus %+v containerStatuses: %+v",pod.Name,podStatus,podStatus.ContainerStatuses)
+
 	// check if an internal module has requested the pod is evicted.
 	for _, podSyncHandler := range kl.PodSyncHandlers {
 		if result := podSyncHandler.ShouldEvict(pod); result.Evict {

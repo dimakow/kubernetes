@@ -181,6 +181,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 	defer func() { recover() }() // Actually eat panics (HandleCrash takes care of logging)
 	defer runtime.HandleCrash(func(_ interface{}) { keepGoing = true })
 
+	klog.Infof("WorkerProbeType: %+v Entering doProbe for container %+v containerId", w.probeType, w.container.Name, w.containerID.String())
 	status, ok := w.probeManager.statusManager.GetPodStatus(w.pod.UID)
 	if !ok {
 		// Either the pod has not been created yet, or it was already deleted.
@@ -203,12 +204,17 @@ func (w *worker) doProbe() (keepGoing bool) {
 		return true // Wait for more information.
 	}
 
+	klog.Infof("ContainerId: %+v",c.ContainerID)
+
 	if w.containerID.String() != c.ContainerID {
 		if !w.containerID.IsEmpty() {
 			w.resultsManager.Remove(w.containerID)
 		}
+		klog.Infof("Interesting branch: %+v",w.pod)
 		w.containerID = kubecontainer.ParseContainerID(c.ContainerID)
-		w.resultsManager.Set(w.containerID, w.initialValue, w.pod)
+		if c.State.Running == nil || int32(time.Since(c.State.Running.StartedAt.Time).Seconds()) < w.spec.InitialDelaySeconds {
+			w.resultsManager.Set(w.containerID, w.initialValue, w.pod)
+		}
 		// We've got a new container; resume probing.
 		w.onHold = false
 	}
@@ -269,6 +275,8 @@ func (w *worker) doProbe() (keepGoing bool) {
 		// Prober error, throw away the result.
 		return true
 	}
+
+	klog.Infof("WorkerProbeType: %+v Container: %+v containerID %+v Prober result: %+v",w.probeType, w.container.Name,w.containerID.String(),result)
 
 	switch result {
 	case results.Success:

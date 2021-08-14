@@ -23,6 +23,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -316,6 +317,120 @@ func TestUpdatePodStatus(t *testing.T) {
 				c.Name, expected, c.Ready)
 		}
 	}
+}
+
+func (m *manager) TestUpdatePodStatusWithInitialState(){
+	unprobed := v1.ContainerStatus{
+		Name:        "unprobed_container",
+		ContainerID: "test://unprobed_container_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	probedReady := v1.ContainerStatus{
+		Name:        "probed_container_ready",
+		ContainerID: "test://probed_container_ready_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	probedPending := v1.ContainerStatus{
+		Name:        "probed_container_pending",
+		ContainerID: "test://probed_container_pending_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	probedUnready := v1.ContainerStatus{
+		Name:        "probed_container_unready",
+		ContainerID: "test://probed_container_unready_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	notStartedNoReadiness := v1.ContainerStatus{
+		Name:        "not_started_container_no_readiness",
+		ContainerID: "test://not_started_container_no_readiness_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	startedNoReadiness := v1.ContainerStatus{
+		Name:        "started_container_no_readiness",
+		ContainerID: "test://started_container_no_readiness_id",
+		State: v1.ContainerState{
+			Running: &v1.ContainerStateRunning{},
+		},
+	}
+	terminated := v1.ContainerStatus{
+		Name:        "terminated_container",
+		ContainerID: "test://terminated_container_id",
+		State: v1.ContainerState{
+			Terminated: &v1.ContainerStateTerminated{},
+		},
+	}
+	alreadyRunningContainerInitialReadyState := v1.ContainerStatus{
+		Name: "already_running_container",
+		ContainerID: "test://already_running_container",
+		State: v1.ContainerState{},
+
+	}
+	alreadyRunningContainerActualReadyState := v1.ContainerStatus{
+		Name: "already_running_container",
+		ContainerID: "test://already_running_container",
+		Ready: true,
+
+	}
+
+	podStatusInitialReadyStatus := v1.PodStatus{
+		Phase: v1.PodRunning,
+		ContainerStatuses: []v1.ContainerStatus{
+			alreadyRunningContainerInitialReadyState,
+		},
+	}
+
+	podStatusActualReadyState := v1.PodStatus{
+		Phase: v1.PodRunning,
+		ContainerStatuses: []v1.ContainerStatus{
+			alreadyRunningContainerActualReadyState,
+		},
+	}
+
+	alreadyRunningPod := v1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       testPodUID,
+			Name:      "testPod",
+			Namespace: "default",
+		},
+		Status: podStatusActualReadyState,
+	}
+
+	client := fake.NewSimpleClientset(alreadyRunningPod)
+
+	m := newTestManager(client)
+	// no cleanup: using fake workers.
+
+	m.UpdatePodStatus(testPodUID, &podStatus)
+
+	expectedReadiness := map[probeKey]bool{
+		{testPodUID, unprobed.Name, readiness}:              true,
+		{testPodUID, probedReady.Name, readiness}:           true,
+		{testPodUID, probedPending.Name, readiness}:         false,
+		{testPodUID, probedUnready.Name, readiness}:         false,
+		{testPodUID, notStartedNoReadiness.Name, readiness}: false,
+		{testPodUID, startedNoReadiness.Name, readiness}:    true,
+		{testPodUID, terminated.Name, readiness}:            false,
+	}
+	for _, c := range podStatus.ContainerStatuses {
+		if !c.Ready {
+			t.Errorf("Expected container to be ready")
+		}
+	}
+
 }
 
 func (m *manager) extractedReadinessHandling() {

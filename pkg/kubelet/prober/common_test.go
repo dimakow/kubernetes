@@ -103,12 +103,17 @@ func setTestProbe(pod *v1.Pod, probeType probeType, probeSpec v1.Probe) {
 	}
 }
 
-func newTestManager() *manager {
+func newTestManager(client *fake.Clientset) *manager {
+
+	if client == nil {
+		client = &fake.Clientset{}
+	}
+
 	podManager := kubepod.NewBasicPodManager(nil, nil, nil)
 	// Add test pod to pod manager, so that status manager can get the pod from pod manager if needed.
 	podManager.AddPod(getTestPod())
 	m := NewManager(
-		status.NewManager(&fake.Clientset{}, podManager, &statustest.FakePodDeletionSafetyProvider{}),
+		status.NewManager(client, podManager, &statustest.FakePodDeletionSafetyProvider{}),
 		results.NewManager(),
 		results.NewManager(),
 		results.NewManager(),

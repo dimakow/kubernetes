@@ -1494,6 +1494,9 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	podStatus := o.podStatus
 	updateType := o.updateType
 
+	klog.Infof("syncing pod: %+v",pod.UID)
+	klog.Infof("syncing pod status %+v",podStatus)
+
 	// if we want to kill a pod, do it now!
 	if updateType == kubetypes.SyncPodKill {
 		killPodOptions := o.killPodOptions
@@ -1583,6 +1586,7 @@ func (kl *Kubelet) syncPod(o syncPodOptions) error {
 	}
 
 	// Update status in the status manager
+	klog.Infof("Setting podstatus for %+v status %+v",pod.UID,apiPodStatus)
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 
 	// Kill pod if it should not be running

@@ -155,6 +155,8 @@ func (m *manager) Start() {
 	}
 
 	klog.InfoS("Starting to sync pod status with apiserver")
+
+	//m.initializePodStatuses() 
 	//lint:ignore SA1015 Ticker can link since this is only called once and doesn't handle termination.
 	syncTicker := time.Tick(syncPeriod)
 	// syncPod and syncBatch share the same go routine to avoid sync races.
@@ -199,7 +201,45 @@ func (m *manager) SetPodStatus(pod *v1.Pod, status v1.PodStatus) {
 	m.updateStatusInternal(pod, status, pod.DeletionTimestamp != nil)
 }
 
+func (m *manager) initializePodStatuses() {
+	m.podStatusesLock.Lock()
+	defer m.podStatusesLock.Unlock()
+	
+	//pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{
+    	//	FieldSelector: "spec.nodeName=" + nodeName,
+	//})
+	pods, err := m.kubeClient.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		klog.InfoS("Error while receiving all existing pods",err)
+		return
+	}
+	// Make sure we're caching a deep copy.
+	//status = *status.DeepCopy()
+
+	for _, pod := range pods.Items {
+		klog.Infof("Following pod exists " + pod.Name)
+		for _, container := range pod.Status.ContainerStatuses {
+			klog.Infof("Container %+v State %+v Ready %+v", container.Name, container.State, container.Ready)
+		}
+		m.updateStatusInternal(&pod,pod.Status,false)
+	}
+
+	ps := m.podManager.GetPods()
+	for _, pod := range ps {
+		klog.Infof("Following pod exists " + pod.Name)
+		for _, container := range pod.Status.ContainerStatuses {
+			klog.Infof("Container %+v State %+v Ready %+v", container.Name, container.State, container.Ready)
+		}
+	}
+
+	// Force a status update if deletion timestamp is set. This is necessary
+	// because if the pod is in the non-running state, the pod worker still
+	// needs to be able to trigger an update and/or deletion.
+	//m.updateStatusInternal(pod, status, pod.DeletionTimestamp != nil)
+}
+
 func (m *manager) SetContainerReadiness(podUID types.UID, containerID kubecontainer.ContainerID, ready bool) {
+	klog.Infof("SetContainerReadyness for container %+v with %+v",containerID,ready)
 	m.podStatusesLock.Lock()
 	defer m.podStatusesLock.Unlock()
 
@@ -236,6 +276,8 @@ func (m *manager) SetContainerReadiness(podUID types.UID, containerID kubecontai
 
 	// Make sure we're not updating the cached version.
 	status := *oldStatus.status.DeepCopy()
+
+	klog.Infof("VeryOldStatus for container %+v is %+v",containerID.String(), status)
 	containerStatus, _, _ = findContainerStatus(&status, containerID.String())
 	containerStatus.Ready = ready
 
@@ -389,6 +431,8 @@ func checkContainerStateTransition(oldStatuses, newStatuses []v1.ContainerStatus
 // necessary. Returns whether an update was triggered.
 // This method IS NOT THREAD SAFE and must be called from a locked function.
 func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUpdate bool) bool {
+	klog.Infof("Update status for pod: %+v with state %+v",pod.Name, status)
+
 	var oldStatus v1.PodStatus
 	cachedStatus, isCached := m.podStatuses[pod.UID]
 	if isCached {
@@ -399,11 +443,13 @@ func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUp
 		oldStatus = pod.Status
 	}
 
+
 	// Check for illegal state transition in containers
 	if err := checkContainerStateTransition(oldStatus.ContainerStatuses, status.ContainerStatuses, pod.Spec.RestartPolicy); err != nil {
 		klog.ErrorS(err, "Status update on pod aborted", "pod", klog.KObj(pod))
 		return false
 	}
+
 	if err := checkContainerStateTransition(oldStatus.InitContainerStatuses, status.InitContainerStatuses, pod.Spec.RestartPolicy); err != nil {
 		klog.ErrorS(err, "Status update on pod aborted", "pod", klog.KObj(pod))
 		return false
@@ -411,7 +457,7 @@ func (m *manager) updateStatusInternal(pod *v1.Pod, status v1.PodStatus, forceUp
 
 	// Set ContainersReadyCondition.LastTransitionTime.
 	updateLastTransitionTime(&status, &oldStatus, v1.ContainersReady)
-
+	
 	// Set ReadyCondition.LastTransitionTime.
 	updateLastTransitionTime(&status, &oldStatus, v1.PodReady)
 
@@ -547,6 +593,7 @@ func (m *manager) syncBatch() {
 
 // syncPod syncs the given status with the API server. The caller must not hold the lock.
 func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
+	klog.Infof("Syncpod called for %+v with status %+v",uid,status)
 	if !m.needsUpdate(uid, status) {
 		klog.V(1).InfoS("Status for pod is up-to-date; skipping", "podUID", uid)
 		return
