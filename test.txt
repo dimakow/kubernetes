@@ -1,0 +1,2 @@
++++ [0815 10:19:57] Running tests without code coverage
+ok  	k8s.io/kubernetes/pkg/kubelet/prober	10.080s
